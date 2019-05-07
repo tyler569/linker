@@ -44,25 +44,14 @@ int main() {
         void *ngk_elf = load_file(ngk, 0);
         void *mod_elf = load_file(mod, 1);
 
-        /*elf_debugprint(ngk_elf);
-        elf_print_syms(ngk_elf);
+        struct elfinfo ei_ngk = elf_info(ngk_elf);
+        struct elfinfo ei_mod = elf_info(mod_elf);
 
-        elf_debugprint(mod_elf);
-        elf_print_syms(mod_elf);
-        */
-
-        printf("ngk_1 is at %lx\n", elf_get_sym_off("ngk_1", ngk_elf));
-        printf("mod_1 is at %lx\n", elf_get_sym_off("mod_1", mod_elf));
-
-        // elf_print_rels(mod_elf);
-
-        elf_print_syms(mod_elf);
-        elf_resolve_symbols_from_elf(ngk_elf, mod_elf);
-        elf_print_syms(mod_elf);
+        elf_resolve_symbols(&ei_ngk, &ei_mod);
 
         printf("\n\n == relocating object ==\n\n");
 
-        elf_relocate_object(mod_elf, 0x800000);
+        elf_relocate_object(&ei_mod, 0x800000);
 
         return 0;
 }

@@ -274,66 +274,31 @@ typedef Elf32_Sym  Elf_Sym;
 // typedef Elf32_Dyn  Elf_Dyn;
 #endif
 
+struct elfinfo {
+        Elf *elf;
 
+        size_t shdr_count;
+        size_t shstrndx;
+
+        Elf_Shdr *shdr;
+        Elf_Shdr *strtab;
+        Elf_Shdr *symtab;
+        char *shstrtab;
+};
+
+extern struct elfinfo ngk_elfinfo;
+
+void *elf_at(Elf *elf, size_t offset);
 int elf_verify(Elf *header);
+int elf_load(Elf *header);
 void elf_debugprint(Elf *elf);
-void elf_print_syms(Elf *elf);
-size_t elf_get_sym_off(const char *sym_name, Elf *elf);
-void elf_print_rels(Elf *elf);
-void elf_resolve_symbols_from_elf(Elf *master, Elf *child);
-int elf_relocate_object(Elf *elf, uintptr_t new_base);
-
-/*
-// Dymamic array tags
-#define DT_NULL 0
-#define DT_NEEDED 1
-#define DT_PLTRELSZ 2
-#define DT_PLTGOT 3
-#define DT_HASH 4
-#define DT_STRTAB 5
-#define DT_SYMTAB 6
-#define DT_RELA 7
-#define DT_RELASZ 8
-#define DT_RELAENT 9
-#define DT_STRSZ 10
-#define DT_SYMENT 11
-#define DT_INIT 12
-#define DT_FINI 13
-#define DT_SONAME 14
-#define DT_RPATH 15
-#define DT_SYMBOLIC 16
-#define DT_REL 17
-#define DT_RELSZ 18
-#define DT_RELENT 19
-#define DT_PLTREL 20
-#define DT_DEBUG 21
-#define DT_TEXTREL 22
-#define DT_JMPREL 23
-#define DT_BIND_NOW 24
-#define DT_INIT_ARRAY 25
-#define DT_FINI_ARRAY 26
-#define DT_INIT_ARRAYSZ 27
-#define DT_FINI_ARRAYSZ 28
-#define DT_LOOS 0x60000000
-#define DT_HIOS 0x6fffffff
-#define DT_LOPROC 0x70000000
-#define DT_HIPROC 0x7fffffff
-
-typedef struct {
-        Elf32_Sword d_tag;
-        union {
-                Elf32_Word d_val;
-                Elf32_Addr d_ptr;
-        } d_un;
-} Elf32_Dyn;
-
-typedef struct {
-        Elf64_Sxword d_tag;
-        union {
-                Elf64_Xword d_val;
-                Elf64_Addr d_ptr;
-        } d_un;
-} Elf64_Dyn;
-*/
+//void elf_print_syms(Elf *elf);
+struct elfinfo elf_info(Elf *elf);
+size_t elf_get_sym_off(struct elfinfo *ei, const char *sym_name);
+//void elf_print_rels(Elf *elf);
+void elf_resolve_symbols(struct elfinfo *master, struct elfinfo *child);
+//void elf_resolve_symbols_from_shdrs(Elf_Shdr *m_symtab, Elf_Shdr *m_strtab,
+//                                    Elf *child);
+int elf_relocate_object(struct elfinfo *ei, uintptr_t new_base);
 
 #endif

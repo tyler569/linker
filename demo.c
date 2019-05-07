@@ -61,9 +61,10 @@ int main() {
                 exit(EXIT_FAILURE);
         }
 
-        size_t init_module_offset = elf_get_sym_off("init_module", mod_elf);
-        int (*init_module)(int) = (void *)(
-                        (char *)mod_elf + init_module_offset);
+        struct elfinfo ei = elf_info(mod_elf);
+
+        size_t fn_off = elf_get_sym_off(&ei, "init_module");
+        int (*init_module)(int) = (void *)((char *)mod_elf + fn_off);
         printf("init_module is at %p\n", init_module);
 
         init_module(10);
