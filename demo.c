@@ -1,6 +1,6 @@
 
-#include <ng/basic.h>
-#include <ng/elf.h>
+#include <basic.h>
+#include <linker/elf.h>
 #include <stdlib.h>
 #include <string.h>
 

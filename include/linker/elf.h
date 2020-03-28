@@ -1,12 +1,16 @@
 
 #pragma once
-#ifndef NIGHTINGALE_ELF_H
-#define NIGHTINGALE_ELF_H
+#ifndef LINKER_ELF_H
+#define LINKER_ELF_H
 
-#include <ng/basic.h>
+#include <basic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#if __kernel__
+#include <ng/multiboot2.h>
+#endif
 
 #define ELF32 1
 #define ELF64 2
@@ -294,11 +298,13 @@ int elf_load(Elf *header);
 void elf_debugprint(Elf *elf);
 //void elf_print_syms(Elf *elf);
 struct elfinfo elf_info(Elf *elf);
+void mb_elf_info(multiboot_tag_elf_sections *mb, struct elfinfo *ei);
 size_t elf_get_sym_off(struct elfinfo *ei, const char *sym_name);
 //void elf_print_rels(Elf *elf);
 void elf_resolve_symbols(struct elfinfo *master, struct elfinfo *child);
 //void elf_resolve_symbols_from_shdrs(Elf_Shdr *m_symtab, Elf_Shdr *m_strtab,
 //                                    Elf *child);
 int elf_relocate_object(struct elfinfo *ei, uintptr_t new_base);
+void elf_find_symbol_by_addr(struct elfinfo *elf, uintptr_t addr, char *buf);
 
-#endif
+#endif // LINKER_ELF_H
