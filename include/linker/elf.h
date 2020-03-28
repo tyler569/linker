@@ -296,15 +296,13 @@ void *elf_at(Elf *elf, size_t offset);
 int elf_verify(Elf *header);
 int elf_load(Elf *header);
 void elf_debugprint(Elf *elf);
-//void elf_print_syms(Elf *elf);
 struct elfinfo elf_info(Elf *elf);
-void mb_elf_info(multiboot_tag_elf_sections *mb, struct elfinfo *ei);
 size_t elf_get_sym_off(struct elfinfo *ei, const char *sym_name);
-//void elf_print_rels(Elf *elf);
 void elf_resolve_symbols(struct elfinfo *master, struct elfinfo *child);
-//void elf_resolve_symbols_from_shdrs(Elf_Shdr *m_symtab, Elf_Shdr *m_strtab,
-//                                    Elf *child);
 int elf_relocate_object(struct elfinfo *ei, uintptr_t new_base);
 void elf_find_symbol_by_addr(struct elfinfo *elf, uintptr_t addr, char *buf);
+#ifdef __kernel__
+void mb_elf_info(multiboot_tag_elf_sections *mb);
+#endif
 
 #endif // LINKER_ELF_H

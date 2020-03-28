@@ -3,9 +3,15 @@ ifeq ($(CFLAGS),)
 	CFLAGS := -g
 endif
 
-INCLUDE := -Iinclude/linker -Iinclude
+ifeq ($(BUILDDIR),)
+	MD := .
+else
+	MD := $(BUILDDIR)/linker
+endif
 
-.PHONY: mod.o
+INCLUDE := -I../include -Iinclude/linker -Iinclude -I../include/nc -I../kernel/include
+
+.PHONY: mod.o klib
 
 all: demo mod.o link
 
@@ -18,9 +24,11 @@ demo: demo.c elf.c
 mod.o:
 	$(CC) -c mod.c -o mod.o
 
-liblinker.a:
-	$(CC) $(CFLAGS) $(INCLUDE) -c elf.c -o elf.o
-	ar rcs liblinker.a elf.o
+klib: elf.c Makefile
+	@mkdir -p $(MD)
+	@echo "XCC elf.c"
+	$(Q)$(CC) $(CFLAGS) $(INCLUDE) -c elf.c -o $(MD)/elf.o
+	$(Q)ar rcs $(BUILDDIR)/liblinker.a $(MD)/elf.o
 
 clean:
 	rm -f demo mod.o link elf.o liblinker.a

@@ -4,17 +4,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#if defined(__kernel__) && defined(__nightingale__)
-#include <ng/multiboot2.h>
-#include <ng/panic.h>
-#include <ng/print.h>
-#include <ng/string.h>
-#include <ng/vmm.h>
-#elif __STDC_HOSTED__
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __kernel__
+#include <ng/vmm.h>
+#include <ng/panic.h>
 #endif
 
 #ifdef __kernel__
@@ -23,8 +19,9 @@
 #define fail() exit(EXIT_FAILURE)
 #endif
 
-
+#ifdef __kernel__
 struct elfinfo ngk_elfinfo = {0};
+#endif
 
 void elf_debugprint(Elf *elf) {
         int bits = elf_verify(elf);
@@ -174,7 +171,9 @@ void *ei_sec(struct elfinfo *elf, Elf_Shdr *shdr) {
 }
 
 #if __kernel__
-Elf_Shdr *mb_elf_get_sec(struct elfinfo *ei, const char *name) {
+Elf_Shdr *mb_elf_get_sec(const char *name) {
+        struct elfinfo *ei = &ngk_elfinfo;
+
         Elf_Shdr *shdr = ei->shdr;
         char *str_tab = ei->shstrtab;
 
@@ -192,7 +191,9 @@ Elf_Shdr *mb_elf_get_sec(struct elfinfo *ei, const char *name) {
         return sec;
 }
 
-void mb_elf_info(multiboot_tag_elf_sections *mb, struct elfinfo *ret) {
+void mb_elf_info(multiboot_tag_elf_sections *mb) {
+        struct elfinfo *ret = &ngk_elfinfo;
+
         ret->elf = 0;
         ret->shdr_count = mb->num;
         ret->shstrndx = mb->shndx;
@@ -200,8 +201,8 @@ void mb_elf_info(multiboot_tag_elf_sections *mb, struct elfinfo *ret) {
 
         ret->shstrtab = ei_sec(ret, &ret->shdr[ret->shstrndx]);
 
-        ret->symtab = mb_elf_get_sec(ret, ".symtab");
-        ret->strtab = mb_elf_get_sec(ret, ".strtab");
+        ret->symtab = mb_elf_get_sec(".symtab");
+        ret->strtab = mb_elf_get_sec(".strtab");
 }
 #endif
 
