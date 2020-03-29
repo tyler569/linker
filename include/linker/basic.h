@@ -1,4 +1,8 @@
 
+#ifdef __kernel__
+#error "This <basic.h> should never be included by code integrated into ng"
+#endif
+
 #pragma once
 #ifndef NIGHTINGALE_BASIC_H
 #define NIGHTINGALE_BASIC_H
@@ -10,35 +14,24 @@
 #define CAT_(x, y) x##y
 #define CAT(x, y) CAT_(x, y)
 
+#ifdef __x86_64__
 #define X86_64 1
-#define I686 0
-
-// Compiler independant attributes
-
-// You could make the argument that I choose bad names, since '__' is
-// reserved for the compiler, but the odds they use these in the near
-// future (esp. since the Linux kernel uses these exact #defines) is
-// so low I don't really care.  I like that it's clear that these are
-// attributes, and prefer them over the alternatives I know of, (PACKED,
-// _packed, or just packed).
+#elif defined(__i386__) || defined(__i686__)
+#define I686 1
+#endif
 
 #ifdef __GNUC__
-#define __packed __attribute__((packed))
-#define __noreturn __attribute__((noreturn))
-#define __used __attribute__((used))
-
-// maybe switch to this
-#define PACKED __packed
-#define NORETURN __noreturn
-#define USED __used
+#define _packed __attribute__((packed))
+#define _noreturn __attribute__((noreturn))
+#define _used __attribute__((used))
+#define noinline __attribute__((noinline))
 
 #ifndef noreturn
 #define noreturn __noreturn
 #endif
 
 #else
-#error                                                                         \
-    "Need to support non-__GNUC__ attributes.  Edit basic.h for your compiler"
+#error "Not __GNUC__ -- edit basic.h for your compiler"
 #endif
 
 // GCC stack smasking protection

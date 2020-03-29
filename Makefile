@@ -9,7 +9,15 @@ else
 	MD := $(BUILDDIR)/linker
 endif
 
-INCLUDE := -I../include -Iinclude/linker -Iinclude -I../include/nc -I../kernel/include
+ifdef NIGHTINGALE
+	INCLUDE := -I$(REPO)/include \
+		       -Iinclude/linker \
+			   -Iinclude \
+			   -I$(REPO)/include/nc \
+			   -I$(REPO)/kernel/include
+else
+	INCLUDE := -Iinclude/linker -Iinclude
+endif
 
 .PHONY: mod.o klib
 

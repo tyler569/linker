@@ -59,10 +59,16 @@ const char elf32_header_example[8] = {
         0x7F, 'E', 'L', 'F', ELF32, ELFLE, ELFVERSION, ELFABI,
 };
 
+#ifdef __kernel__
+#define VERIFY_DEPTH 8
+#else
+#define VERIFY_DEPTH 7
+#endif
+
 int elf_verify(Elf *elf) {
-        if (memcmp(elf, elf64_header_example, 8) == 0) {
+        if (memcmp(elf, elf64_header_example, VERIFY_DEPTH) == 0) {
                 return 64;
-        } else if (memcmp(elf, elf32_header_example, 8) == 0) {
+        } else if (memcmp(elf, elf32_header_example, VERIFY_DEPTH) == 0) {
                 return 32;
         } else {
                 return 0;
@@ -134,7 +140,7 @@ Elf_Shdr *elf_get_sec(Elf *elf, const char *name) {
 }
 
 struct elfinfo elf_info(Elf *elf) {
-        if (elf_verify(elf) == 0) {
+        if (!elf_verify(elf)) {
                 printf("invalid elf passed to elf_info\n");
                 fail();
         }
