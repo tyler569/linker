@@ -1,8 +1,9 @@
+#include <lib.h>
 #include <sys/syscall.h>
 
 typedef unsigned long ulong;
 
-static long __syscall1(ulong number, ulong arg) {
+long __syscall1(ulong number, ulong arg) {
     long ret;
     asm volatile (
         "syscall"
@@ -13,7 +14,7 @@ static long __syscall1(ulong number, ulong arg) {
     );
 }
 
-static long __syscall3(ulong number, ulong a1, ulong a2, ulong a3) {
+long __syscall3(ulong number, ulong a1, ulong a2, ulong a3) {
     long ret;
     asm volatile (
         "syscall"
@@ -26,7 +27,7 @@ static long __syscall3(ulong number, ulong a1, ulong a2, ulong a3) {
     );
 }
 
-static ulong strlen(const char *str) {
+ulong strlen(const char *str) {
     for (ulong i=0; ; i++) {
         if (str[i] == 0)  return i;
     }
@@ -35,11 +36,5 @@ static ulong strlen(const char *str) {
 void lprint(const char *message) {
     ulong len = strlen(message);
     __syscall3(__NR_write, 1, (ulong)message, len);
-}
-
-int _start() {
-    int lmain();
-    lmain();
-    __syscall1(__NR_exit, 0);
 }
 

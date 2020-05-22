@@ -32,8 +32,12 @@ struct elf_metadata {
 
     Elf_Phdr *program_headers;
 };
-
 typedef struct elf_metadata elf_md;
+
+
+void elf_print(elf_md *e) {
+    printf("elf @ %p\n", e->mem);
+}
 
 Elf_Shdr *elf_find_section(elf_md *e, const char *name) {
     Elf *elf = e->image;
@@ -49,6 +53,23 @@ Elf_Shdr *elf_find_section(elf_md *e, const char *name) {
         Elf_Shdr *shdr = shdr_table + i;
         const char *sh_name = e->shdr_string_table + shdr->sh_name;
         if (strcmp(sh_name, name) == 0)  return shdr;
+    }
+    return NULL;
+}
+
+Elf_Sym *elf_find_symbol(elf_md *e, const char *name) {
+    // TODO: symbol hash table lookups
+    Elf_Sym *sym_tab = e->symbol_table;
+    if (!sym_tab)  return 0;
+
+    int symbol_table_count = e->symbol_table_section->sh_size / sizeof(Elf_Sym);
+
+    for (int i=0; i<symbol_table_count; i++) {
+        Elf_Sym *symbol = sym_tab + i;
+        const char *symbol_name = e->string_table + symbol->st_name;
+        if (strcmp(name, symbol_name) == 0) {
+            return symbol;
+        }
     }
     return NULL;
 }
@@ -104,7 +125,7 @@ unsigned long elf_hash(const unsigned char *name) {
 
 
 elf_md *elf_open(const char *name) {
-    int fd = open(file, O_RDONLY);
+    int fd = open(name, O_RDONLY);
     if (fd < 0)  fail("open");
 
     struct stat statbuf;
@@ -201,6 +222,9 @@ int main(int argc, char **argv) {
     
     elf_md *lib = elf_open("liblib.so");
     elf_md *main = elf_open("lmain");
+
+    elf_print(lib);
+    elf_print(main);
 
 
 }
