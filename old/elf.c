@@ -1,27 +1,11 @@
 
-#include <basic.h>
-#include <linker/elf.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef __kernel__
-#include <ng/vmm.h>
-#include <ng/panic.h>
-#endif
-
-#ifdef __kernel__
-#define fail() panic()
-#else
-#define fail() exit(EXIT_FAILURE)
-#endif
-
-#ifdef __kernel__
-struct elfinfo ngk_elfinfo = {0};
-#endif
+#include "linker/elf.h"
 
 void elf_debugprint(Elf *elf) {
         int bits = elf_verify(elf);
@@ -59,11 +43,7 @@ const char elf32_header_example[8] = {
         0x7F, 'E', 'L', 'F', ELF32, ELFLE, ELFVERSION, ELFABI,
 };
 
-#ifdef __kernel__
-#define VERIFY_DEPTH 8
-#else
 #define VERIFY_DEPTH 7
-#endif
 
 int elf_verify(Elf *elf) {
         if (memcmp(elf, elf64_header_example, VERIFY_DEPTH) == 0) {
@@ -74,48 +54,6 @@ int elf_verify(Elf *elf) {
                 return 0;
         }
 }
-
-#ifdef __kernel__
-void init_section(void *destination_vaddr, size_t len) {
-        uintptr_t bot = round_down((uintptr_t)destination_vaddr, 0x1000);
-        uintptr_t top = round_up((uintptr_t)destination_vaddr + len, 0x1000);
-
-        for (uintptr_t p = bot; p <= top; p += 0x1000)
-                vmm_create_unbacked(p, PAGE_USERMODE | PAGE_WRITEABLE);
-}
-
-void load_section(void *destination_vaddr, void *source_vaddr, size_t flen, size_t mlen) {
-        memcpy(destination_vaddr, source_vaddr, flen);
-
-        // BSS is specified by having p_memsz > p_filesz
-        // you are expected to zero the extra space
-        if (mlen > flen) {
-                memset((char *)destination_vaddr + flen, 0, mlen - flen);
-        }
-}
-
-int elf_load(Elf *elf) {
-        int bits = elf_verify(elf);
-        if (bits == 0) {
-                printf("invalid elf\n");
-                return -1;
-        }
-        char *phdr_l = ((char *)elf) + elf->e_phoff;
-        Elf_Phdr *phdr = (Elf_Phdr *)phdr_l;
-
-        for (int i = 0; i < elf->e_phnum; i++) {
-                Elf_Phdr *sec = &phdr[i];
-                if (sec->p_type != PT_LOAD)
-                        continue;
-                void *section = elf_at(elf, sec->p_offset);
-
-                init_section((void *)sec->p_vaddr, sec->p_memsz);
-                load_section((void *)sec->p_vaddr, section,
-                             sec->p_filesz, sec->p_memsz);
-        }
-        return 0;
-}
-#endif
 
 void *elf_at(Elf *elf, size_t offset) {
         return ((char *)elf) + offset;
@@ -142,7 +80,7 @@ Elf_Shdr *elf_get_sec(Elf *elf, const char *name) {
 struct elfinfo elf_info(Elf *elf) {
         if (!elf_verify(elf)) {
                 printf("invalid elf passed to elf_info\n");
-                fail();
+                exit(1);
         }
 
         struct elfinfo ret = {0};
@@ -163,54 +101,11 @@ struct elfinfo elf_info(Elf *elf) {
 void *ei_sec(struct elfinfo *elf, Elf_Shdr *shdr) {
         if (elf->elf) {
                 return (char *)elf->elf + shdr->sh_offset;
-        }
-#ifdef __kernel__
-        else {
-                return (char *)shdr->sh_addr + VMM_VIRTUAL_OFFSET;
-        }
-#else
-        else {
+        } else {
                 printf("invalid elfinfo - no ->elf\n");
-                fail();
+                exit(1);
         }
-#endif
 }
-
-#if __kernel__
-Elf_Shdr *mb_elf_get_sec(const char *name) {
-        struct elfinfo *ei = &ngk_elfinfo;
-
-        Elf_Shdr *shdr = ei->shdr;
-        char *str_tab = ei->shstrtab;
-
-        Elf_Shdr *sec = NULL;
-
-        for (int i=0; i<ei->shdr_count; i++) {
-                if (!shdr[i].sh_size) {
-                        continue;
-                }
-                if (strcmp(&str_tab[shdr[i].sh_name], name) == 0) {
-                        sec = &shdr[i];
-                }
-        }
-
-        return sec;
-}
-
-void mb_elf_info(multiboot_tag_elf_sections *mb) {
-        struct elfinfo *ret = &ngk_elfinfo;
-
-        ret->elf = 0;
-        ret->shdr_count = mb->num;
-        ret->shstrndx = mb->shndx;
-        ret->shdr = (Elf_Shdr *)&mb->sections;
-
-        ret->shstrtab = ei_sec(ret, &ret->shdr[ret->shstrndx]);
-
-        ret->symtab = mb_elf_get_sec(".symtab");
-        ret->strtab = mb_elf_get_sec(".strtab");
-}
-#endif
 
 void elf_print_syms(struct elfinfo *ei) {
         Elf_Sym *sym = ei_sec(ei, ei->symtab);
@@ -223,47 +118,6 @@ void elf_print_syms(struct elfinfo *ei) {
                 }
         }
 }
-
-#if __kernel__
-void elf_find_symbol_by_addr(struct elfinfo *ei, uintptr_t addr, char *buf) {
-        if (ei->symtab == 0) {
-                sprintf(buf, "(%#zx) <symbols not available>", addr);
-                return;
-        }
-
-        Elf_Sym *sym = ei_sec(ei, ei->symtab);
-        char *str = ei_sec(ei, ei->strtab);
-        Elf_Sym *best_match = &(Elf_Sym){0};
-        long best_distance = -10000000;
-        bool found_a_match = false;
-
-        for (int i=0; i<ei->symtab->sh_size / sizeof(Elf_Sym); i++) {
-                // best match is closest symbol <= the address
-
-                if (sym[i].st_name == 0)  continue;
-
-                long distance = sym[i].st_value - addr;
-
-                if (distance < 0 && distance > best_distance) {
-                        best_distance = distance;
-                        best_match = &sym[i];
-                        found_a_match = true;
-                }
-        }
-
-        if (!found_a_match) {
-                sprintf(buf, "(%#zx) <no match>", addr);
-                return;
-        }
-
-        if (best_match->st_value == 0) {
-                sprintf(buf, "(0) <>");
-        }
-
-        size_t offset = addr - best_match->st_value;
-        sprintf(buf, "(%#zx) <%s+%#zx>", addr, str+best_match->st_name, offset);
-}
-#endif
 
 Elf_Sym *elf_get_sym_p(struct elfinfo *ei, const char *name) {
         Elf_Sym *sym = ei_sec(ei, ei->symtab);
@@ -378,7 +232,6 @@ const char *rel32_type_names[] = {
         [R_386_PC32]     = "R_386_PC32",
 };
 
-#if X86_64
 int perform_relocations_in_section(struct elfinfo *ei, Elf_Shdr *rshdr,
                                    uintptr_t new_base) {
         Elf_Shdr *shdr = ei->shdr;
@@ -423,9 +276,6 @@ int perform_relocations_in_section(struct elfinfo *ei, Elf_Shdr *rshdr,
                                 value = sym->st_value;
                         }
 
-#if __kernel__
-                        break_point();
-#endif
                 } else {
                         value = shdr[sym->st_shndx].sh_offset;
                         value += sym->st_value;
@@ -436,14 +286,6 @@ int perform_relocations_in_section(struct elfinfo *ei, Elf_Shdr *rshdr,
                 if (value < 0x100000) {
                         value += new_base;
                 }
-
-#if 0
-                if (rel_type_names[rel_type] && sym->st_name != 0) {
-                        printf("(%s) ", &str[sym->st_name]);
-                        printf("relocating: %s at %lx with v:%lx\n",
-                                        rel_type_names[rel_type], i_loc, value);
-                }
-#endif
 
                 // TODO: check the location is empty and that
                 // there was no overflow
@@ -473,65 +315,6 @@ int perform_relocations_in_section(struct elfinfo *ei, Elf_Shdr *rshdr,
 
         return 0;
 }
-#elif I686
-int perform_relocations_in_section(struct elfinfo *ei, Elf_Shdr *rshdr,
-                                   uintptr_t new_base) {
-        Elf_Shdr *shdr = ei->shdr;
-
-        Elf32_Rel *rel = ei_sec(ei, rshdr);
-        char *str_tab = ei->shstrtab;
-
-        printf(" (section %s)\n", &str_tab[rshdr->sh_name]);
-
-        Elf_Shdr *link_shdr = &shdr[rshdr->sh_info];
-        printf("  (links to %s)\n", &str_tab[link_shdr->sh_name]);
-
-        Elf_Shdr *strtab = ei->strtab;
-        Elf_Shdr *symtab = ei->symtab;
-        char *str = ei_sec(ei, strtab);
-        Elf_Sym *rsym = ei_sec(ei, symtab);
-
-        for (int i=0; i<rshdr->sh_size / sizeof(Elf32_Rel); i++) {
-                int rel_type = ELF32_R_TYPE(rel[i].r_info);
-                int symindex = ELF32_R_SYM(rel[i].r_info);
-                Elf_Sym *sym = &rsym[symindex];
-
-                char *loc = (char *)rel[i].r_offset;
-                loc += link_shdr->sh_offset;
-                loc += (size_t)ei->elf;
-
-                unsigned long value;
-                // value = shdr[sym->st_shndx].sh_offset; // ?
-                value = sym->st_value;
-
-                // suuuuuuuuuuuuuuper jank
-                if (value < 0x100000) {
-                        value += new_base;
-                }
-
-                if (rel32_type_names[rel_type] && sym->st_name != 0) {
-                        printf("(%s) ", &str[sym->st_name]);
-                        printf("relocating: %s at %lx with v:%lx\n",
-                                        rel32_type_names[rel_type], loc, value);
-                }
-
-                switch(rel_type) {
-                case R_386_32:
-                        *loc += value;
-                        break;
-                case R_386_PC32:
-                        *loc += value - (uint32_t)loc;
-                        break;
-                default:
-                        printf("invalid relocation type: %li\n",
-                                        ELF32_R_TYPE(rel[i].r_info));
-                }
-        }
-
-        return 0;
-
-}
-#endif
 
 int elf_relocate_object(struct elfinfo *ei, uintptr_t new_base) {
         for (int i=0; i<ei->shdr_count; i++) {
@@ -544,37 +327,3 @@ int elf_relocate_object(struct elfinfo *ei, uintptr_t new_base) {
         }
         return 0;
 }
-
-
-
-/* OLD TODO COMMENTS IN elf_relocate_object preserved for posterity:
- *
- *  I don't know if they're relevant still, I should probably think about it
- *
-         * This isn't done!
-         *
-         * This should place section headers at locations first
-         * probably using the ->sh_addr fields so that I can perform
-         * relocations more simply.
-         *
-         * Currently, this does not make any allowance for the BSS section at all!!!
-!
-         *
-
-        // TODO
-        for (int i=0; i<ei->shdr_count; i++) {
-                if (header has ALLOC flag) {
-                        find a place to put the section;
-                        set ->sh_paddr (?);
-                }
-        }
-
-        // TODO: once this is done
-        // make the relocations above use the addr field of the section
-        // and not the offset in the file
-        //
-        // double TODO:
-        // once that is done make a load_elf_by_sections() that loads an
-        // ELF with addrs in its sections into memory (OR just make a program
-        // header that accurately reflects the needed loding information)
- */

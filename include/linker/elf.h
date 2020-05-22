@@ -1,16 +1,13 @@
-
+// vim: sts=8 ts=8 sw=8 et :
 #pragma once
 #ifndef LINKER_ELF_H
 #define LINKER_ELF_H
 
-#include <basic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#if __kernel__
-#include <ng/multiboot2.h>
-#endif
+#define X86_64 1
 
 #define ELF32 1
 #define ELF64 2
@@ -22,6 +19,7 @@
 
 #define ELFVERSION 1
 
+// ?
 #define ELFREL 1
 #define ELFEXEC 2
 #define ELFDYN 3
@@ -82,6 +80,12 @@ typedef struct {
         uint16_t e_shnum;
         uint16_t e_shstrndx;
 } Elf32_Ehdr;
+
+#define ET_NONE 0
+#define ET_REL  1
+#define ET_EXEC 2
+#define ET_DYN  3
+#define ET_CORE 4
 
 /* p_type values: */
 #define PT_NULL 0    // unused entry
@@ -145,10 +149,6 @@ typedef struct {
 #define SHT_REL                 9
 #define SHT_SHLIB              10
 #define SHT_DYNSYM             11
-#define SHT_LOPROC     0x70000000
-#define SHT_HIPROC     0x7fffffff
-#define SHT_LOUSER     0x80000000
-#define SHT_HIUSER     0xffffffff
 
 typedef struct {
         Elf64_Word st_name;
@@ -237,7 +237,7 @@ typedef struct {
 #define R_386_GOTOFF 9
 #define R_386_GOTPC 10
 
-                                      // param   calc
+// param   calc
 #define R_X86_64_NONE 0               // none    none
 #define R_X86_64_64 1                 // word64  S + A
 #define R_X86_64_PC32 2               // word32  S + A - P
@@ -263,46 +263,67 @@ typedef struct {
 #define R_X86_64_GOTTPOFF 22          // word32   
 #define R_X86_64_TPOFF32 23           // word32   
 
+typedef struct {
+        Elf32_Sword d_tag;
+        union {
+                Elf32_Word d_val;
+                Elf32_Addr d_ptr;
+        } d_un;
+} Elf32_Dyn;
+
+typedef struct {
+        Elf64_Sxword d_tag;
+        union {
+                Elf64_Xword d_val;
+                Elf64_Addr d_ptr;
+        } d_un;
+} Elf64_Dyn;
+
+#define DT_NULL 0
+#define DT_NEEDED 1
+#define DT_PLTRELSZ 2
+#define DT_PLTGOT 3
+#define DT_HASH 4
+#define DT_STRTAB 5
+#define DT_SYMTAB 6
+#define DT_RELA 7
+#define DT_RELASZ 8
+#define DT_RELAENT 9
+#define DT_STRSZ 10
+#define DT_SYMENT 11
+#define DT_INIT 12
+#define DT_FINI 13
+#define DT_SONAME 14
+#define DT_RPATH 15
+#define DT_SYMBOLIC 16
+#define DT_REL 17
+#define DT_RELSZ 18
+#define DT_RELENT 19
+#define DT_PLTREL 20
+#define DT_DEBUG 21
+#define DT_TEXTREL 22
+#define DT_JMPREL 23
+#define DT_BIND_NOW 24
+#define DT_LOPROC 0x70000000
+#define DT_HIPROC 0x7fffffff
 
 #if X86_64
+typedef Elf64_Addr Elf_Addr;
 typedef Elf64_Ehdr Elf;
 typedef Elf64_Phdr Elf_Phdr;
 typedef Elf64_Shdr Elf_Shdr;
 typedef Elf64_Sym  Elf_Sym;
-// typedef Elf64_Dyn  Elf_Dyn;
+typedef Elf64_Dyn  Elf_Dyn;
 #elif I686
+typedef Elf32_Addr Elf_Addr;
 typedef Elf32_Ehdr Elf;
 typedef Elf32_Phdr Elf_Phdr;
 typedef Elf32_Shdr Elf_Shdr;
 typedef Elf32_Sym  Elf_Sym;
-// typedef Elf32_Dyn  Elf_Dyn;
+typedef Elf32_Dyn  Elf_Dyn;
 #endif
 
-struct elfinfo {
-        Elf *elf;
-
-        size_t shdr_count;
-        size_t shstrndx;
-
-        Elf_Shdr *shdr;
-        Elf_Shdr *strtab;
-        Elf_Shdr *symtab;
-        char *shstrtab;
-};
-
-extern struct elfinfo ngk_elfinfo;
-
-void *elf_at(Elf *elf, size_t offset);
-int elf_verify(Elf *header);
-int elf_load(Elf *header);
-void elf_debugprint(Elf *elf);
-struct elfinfo elf_info(Elf *elf);
-size_t elf_get_sym_off(struct elfinfo *ei, const char *sym_name);
-void elf_resolve_symbols(struct elfinfo *master, struct elfinfo *child);
-int elf_relocate_object(struct elfinfo *ei, uintptr_t new_base);
-void elf_find_symbol_by_addr(struct elfinfo *elf, uintptr_t addr, char *buf);
-#ifdef __kernel__
-void mb_elf_info(multiboot_tag_elf_sections *mb);
-#endif
+extern Elf_Dyn _DYNAMIC[];
+extern Elf_Addr _GLOBAL_OFFSET_TABLE_[];
 
 #endif // LINKER_ELF_H

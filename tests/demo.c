@@ -1,10 +1,6 @@
 
-#include <basic.h>
-#include <linker/elf.h>
 #include <stdlib.h>
 #include <string.h>
-
-// host-specific
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -12,6 +8,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
+#include "linker/elf.h"
 
 const char *ngk_data[] = {
         "Hello",

@@ -1,3 +1,11 @@
-link
-mod.o
-demo
+*.a
+*.so
+*.o
+*.glibc
+
+lmain
+link-ng
+
+tests/program
+tests/demo
+static-test/program
