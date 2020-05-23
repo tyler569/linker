@@ -21,8 +21,7 @@ struct elf_metadata {
     Elf_Shdr *section_headers;
 
     Elf_Shdr *shdr_string_table_section;
-    const char *shdr_string_table;
-
+    const char *shdr_string_table; 
     Elf_Shdr *symbol_table_section;
     int symbol_count;
     Elf_Sym *symbol_table;
@@ -31,12 +30,29 @@ struct elf_metadata {
     const char *string_table;
 
     Elf_Phdr *program_headers;
+
+    Elf_Dyn *dynamic_table;
+    int dynamic_count;
 };
 typedef struct elf_metadata elf_md;
 
 
 void elf_print(elf_md *e) {
     printf("elf @ %p\n", e->mem);
+}
+
+/*
+ * Always returns the first matching header, if you need multiple (i.e. all
+ * the PT_LOADs, just iterate yourself.)
+ */
+Elf_Phdr *elf_find_phdr(elf_md *e, int p_type) {
+    if (!e->program_headers)  return NULL;
+
+    for (int i=0; i<e->image->e_phnum; i++) {
+        Elf_Phdr *hdr = e->program_headers + i;
+        if (hdr->p_type == p_type)  return hdr;
+    }
+    return NULL;
 }
 
 Elf_Shdr *elf_find_section(elf_md *e, const char *name) {
@@ -100,6 +116,12 @@ elf_md *elf_parse(void *memory) {
 
     if (elf->e_phnum > 0) {
         e->program_headers = memory + elf->e_phoff;
+    }
+
+    Elf_Phdr *dynamic_phdr = elf_find_phdr(e, PT_DYNAMIC);
+    if (dynamic_phdr) {
+        e->dynamic_table = e->mem + dynamic_phdr->p_offset;
+        e->dynamic_count = dynamic_phdr->p_filesz / sizeof(Elf_Dyn);
     }
 
     return e;
@@ -226,6 +248,38 @@ int main(int argc, char **argv) {
     elf_print(lib);
     elf_print(main);
 
+    // for phdr - if LOAD, LOAD.
+    size_t lib_needed_virtual_size = 0;
+    Elf_Phdr *p = lib->program_headers;
+    for (int i=0; i<lib->image->e_phnum; i++) {
+        if (p[i].p_type != PT_LOAD)
+            continue;
+        size_t max = p->p_vaddr + p->p_memsz;
+        if (max > lib_needed_virtual_size)
+            lib_needed_virtual_size = max;
+    }
+
+    void *lib_load = mmap(NULL, lib_needed_virtual_size,
+            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    
+    for (int i=0; i<lib->image->e_phnum; i++) {
+        if (p[i].p_type != PT_LOAD)
+            continue;
+        memcpy(lib_load + p[i].p_vaddr, lib->mem + p[i].p_offset, p[i].p_filesz);
+        // memset the rest to 0 if filesz < memsz
+    }
+
+    
+
+    /*
+    Elf_Sym *libdynsym;
+    char *libdynstr;
+
+    Elf_Dyn *d = lib->dynamic_table;
+    for (d; d->d_tag != DT_NULL; d++) {
+        printf(" dt: %li\n", d->d_tag);
+    }
+    */
 
 }
 
