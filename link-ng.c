@@ -55,6 +55,16 @@ Elf_Phdr *elf_find_phdr(elf_md *e, int p_type) {
     return NULL;
 }
 
+Elf_Dyn *elf_find_dyn(elf_md *e, int d_tag) {
+    Elf_Dyn *d = e->dynamic_table;
+    if (!d)  return NULL;
+
+    for (d; d->d_tag != DT_NULL; d++) {
+        if (d->d_tag == d_tag)  return d;
+    }
+    return NULL;
+}
+
 Elf_Shdr *elf_find_section(elf_md *e, const char *name) {
     Elf *elf = e->image;
 
@@ -254,7 +264,7 @@ int main(int argc, char **argv) {
     for (int i=0; i<lib->image->e_phnum; i++) {
         if (p[i].p_type != PT_LOAD)
             continue;
-        size_t max = p->p_vaddr + p->p_memsz;
+        size_t max = p[i].p_vaddr + p[i].p_memsz;
         if (max > lib_needed_virtual_size)
             lib_needed_virtual_size = max;
     }
@@ -269,17 +279,31 @@ int main(int argc, char **argv) {
         // memset the rest to 0 if filesz < memsz
     }
 
+    Elf_Dyn *lib_dyn_rel  = elf_find_dyn(lib, DT_PLTREL);
+    Elf_Dyn *lib_dyn_sym  = elf_find_dyn(lib, DT_SYMTAB);
+    Elf_Dyn *lib_dyn_str  = elf_find_dyn(lib, DT_STRTAB);
+    Elf_Dyn *lib_dyn_got  = elf_find_dyn(lib, DT_PLTGOT);
+    Elf_Dyn *lib_dyn_relsz = elf_find_dyn(lib, DT_PLTRELSZ);
+
+    Elf_Rela *lib_rel = lib_load + lib_dyn_rel->d_un.d_ptr;
+    Elf_Sym *lib_sym  = lib_load + lib_dyn_sym->d_un.d_ptr;
+    char *lib_str     = lib_load + lib_dyn_str->d_un.d_ptr;
+    Elf_Addr *lib_got = lib_load + lib_dyn_got->d_un.d_ptr;
+    size_t lib_relsz  = lib_dyn_relsz->d_un.d_val;
+
+    printf("lib load base: %p\n", lib_load);
+    printf("lib dynsym   : %p\n", lib_sym);
+    printf("lib pltgot   : %p\n", lib_got);
+    printf("lib dynstr   : %p\n", lib_str);
+    printf("lib dynrel   : %p\n", lib_rel);
+    printf("lib relsz    : %zu\n", lib_relsz);
     
+    int lib_relcnt = lib_relsz / sizeof(Elf_Rela);
+    printf("lib relcnt   : %i\n", lib_relcnt);
 
-    /*
-    Elf_Sym *libdynsym;
-    char *libdynstr;
-
-    Elf_Dyn *d = lib->dynamic_table;
-    for (d; d->d_tag != DT_NULL; d++) {
-        printf(" dt: %li\n", d->d_tag);
-    }
-    */
-
+    // do relocations on the lib GOT
+    
+    // load the main program
+    // do reloations on the program GOT
 }
 

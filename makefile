@@ -1,6 +1,6 @@
 
 INCLUDE := -Iinclude
-CFLAGS += $(INCLUDE)
+CFLAGS += $(INCLUDE) -g
 
 .PHONY: all
 
