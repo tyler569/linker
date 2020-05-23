@@ -225,19 +225,45 @@ typedef struct {
 #define ELF64_R_TYPE(i)    ((i) & 0xFFFFFFFF)
 #define ELF64_R_INFO(s, t) (((s) << 32) + ((t) & 0xFFFFFFFF))
 
-#define R_386_NONE 0
-#define R_386_32 1
-#define R_386_PC32 2
-#define R_386_GOT32 3
-#define R_386_PLT32 4
-#define R_386_COPY 5
-#define R_386_GLOB_DAT 6
-#define R_386_JMP_SLOT 7
-#define R_386_RELATIVE 8
-#define R_386_GOTOFF 9
-#define R_386_GOTPC 10
+#define R_386_NONE 0            // none         none
+#define R_386_32 1              // word32       S + A
+#define R_386_PC32 2            // word32       S + A - P
+#define R_386_GOT32 3           // word32       G + A
+#define R_386_PLT32 4           // word32       L - A + P
+#define R_386_COPY 5            // none         none
+#define R_386_GLOB_DAT 6        // word32       S
+#define R_386_JMP_SLOT 7        // word32       S
+#define R_386_RELATIVE 8        // word32       B + A
+#define R_386_GOTOFF 9          // word32       S + A - GOT
+#define R_386_GOTPC 10          // word32       GOT + A - P
+#define R_386_32PLT 11          // word32       L + A
+#define R_386_16 20             // word16       S + A
+#define R_386_PC16 21           // word16       S + A - P
+#define R_386_8 22              // word8        S + A
+#define R_386_PC8 23            // word8        S + A - P
+#define R_386_SIZE32 38         // word32       Z + A
 
-// param   calc
+
+/*
+ * AMD64 ABI draft, p 66:
+ * https://refspecs.linuxfoundation.org/elf/x86_64-abi-0.95.pdf
+ * 
+ * A Represents the addend used to compute the value of the relocatable field.
+ * B Represents the base address at which a shared object has been loaded into
+ *   memory during execution. Generally, a shared object is built with a 0 base
+ *   virtual address, but the execution address will be different.
+ * G Represents the offset into the global offset table at which the relocation
+ *   entry’s symbol will reside during execution.
+ * GOT Represents the address of the global offset table.
+ * L Represents the place (section offset or address) of the Procedure Linkage
+ *   Table entry for a symbol.
+ * P Represents the place (section offset or address) of the storage unit being
+ *   relocated (computed using r_offset).
+ * S Represents the value of the symbol whose index resides in the relocation
+ *   entry.
+ */
+
+//                                       param   calc
 #define R_X86_64_NONE 0               // none    none
 #define R_X86_64_64 1                 // word64  S + A
 #define R_X86_64_PC32 2               // word32  S + A - P
@@ -254,14 +280,16 @@ typedef struct {
 #define R_X86_64_PC16 13              // word16  S + A - P
 #define R_X86_64_8 14                 // word8   S + A
 #define R_X86_64_PC8 15               // word8   S + A - P
-#define R_X86_64_DPTMOD64 16          // word64   
-#define R_X86_64_DTPOFF64 17          // word64   
-#define R_X86_64_TPOFF64 18           // word64   
-#define R_X86_64_TLSGD 19             // word32       
-#define R_X86_64_TLSLD 20             // word32   
-#define R_X86_64_DTPOFF32 21          // word32   
-#define R_X86_64_GOTTPOFF 22          // word32   
-#define R_X86_64_TPOFF32 23           // word32   
+
+// TLS handling:
+#define R_X86_64_DPTMOD64 16          // word64
+#define R_X86_64_DTPOFF64 17          // word64
+#define R_X86_64_TPOFF64 18           // word64
+#define R_X86_64_TLSGD 19             // word32
+#define R_X86_64_TLSLD 20             // word32
+#define R_X86_64_DTPOFF32 21          // word32
+#define R_X86_64_GOTTPOFF 22          // word32
+#define R_X86_64_TPOFF32 23           // word32
 
 typedef struct {
         Elf32_Sword d_tag;

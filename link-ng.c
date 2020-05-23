@@ -21,7 +21,7 @@ struct elf_metadata {
     Elf_Shdr *section_headers;
 
     Elf_Shdr *shdr_string_table_section;
-    const char *shdr_string_table; 
+    const char *shdr_string_table;
     Elf_Shdr *symbol_table_section;
     int symbol_count;
     Elf_Sym *symbol_table;
@@ -251,7 +251,7 @@ int main(int argc, char **argv) {
     // we want to:
     // take a "libc" .so dynamic library and load it into memory
     // take a "main" dynamic executable and load + link it to libc
-    
+
     elf_md *lib = elf_open("liblib.so");
     elf_md *main = elf_open("lmain");
 
@@ -271,7 +271,7 @@ int main(int argc, char **argv) {
 
     void *lib_load = mmap(NULL, lib_needed_virtual_size,
             PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    
+
     for (int i=0; i<lib->image->e_phnum; i++) {
         if (p[i].p_type != PT_LOAD)
             continue;
@@ -279,7 +279,7 @@ int main(int argc, char **argv) {
         // memset the rest to 0 if filesz < memsz
     }
 
-    Elf_Dyn *lib_dyn_rel  = elf_find_dyn(lib, DT_PLTREL);
+    Elf_Dyn *lib_dyn_rel  = elf_find_dyn(lib, DT_JMPREL);
     Elf_Dyn *lib_dyn_sym  = elf_find_dyn(lib, DT_SYMTAB);
     Elf_Dyn *lib_dyn_str  = elf_find_dyn(lib, DT_STRTAB);
     Elf_Dyn *lib_dyn_got  = elf_find_dyn(lib, DT_PLTGOT);
@@ -297,13 +297,25 @@ int main(int argc, char **argv) {
     printf("lib dynstr   : %p\n", lib_str);
     printf("lib dynrel   : %p\n", lib_rel);
     printf("lib relsz    : %zu\n", lib_relsz);
-    
+
     int lib_relcnt = lib_relsz / sizeof(Elf_Rela);
     printf("lib relcnt   : %i\n", lib_relcnt);
-
-    // do relocations on the lib GOT
     
-    // load the main program
-    // do reloations on the program GOT
+    // start with early binding I think
+
+    for (int i=0; i<lib_relcnt; i++) {
+        Elf_Rela *rel = lib_rel + i;
+        int type = ELF64_R_TYPE(rel->r_info);
+
+        int symix = ELF64_R_SYM(rel->r_info);
+        Elf_Sym *sym = lib_sym + symix;
+
+        char *sym_name = lib_str + sym->st_name;
+        printf("relocation: type: %i, symbol: '%s'\n", type, sym_name);
+
+        printf("  r_offset: %zx\n", rel->r_offset);
+        printf("  r_addend: %zi\n", rel->r_addend);
+        printf("  st_value: %zx\n", sym->st_value);
+    }
 }
 
