@@ -6,8 +6,8 @@ CFLAGS += $(INCLUDE) -g
 
 all: link-ng liblib.so lmain
 
-link-ng: link-ng.c
-	$(CC) $(CFLAGS) $< -o $@
+link-ng: link-ng.c pltstub.S
+	$(CC) $(CFLAGS) $^ -o $@
 
 liblib.so: lib.c lib.h
 	$(CC) -I. -fpic -nostdlib -shared $< -o $@

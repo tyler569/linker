@@ -169,6 +169,14 @@ elf_md *elf_open(const char *name) {
     return e;
 }
 
+// pltstub.S
+void elf_lazy_resolve_stub();
+
+void (*elf_lazy_resolve(elf_md *o, long symbol_index))() {
+    printf("lazy resolving %li with elf %p\n", symbol_index, o);
+    exit(0);
+}
+
 int main(int argc, char **argv) {
 #if 0
     const char *file = argv[1];
@@ -231,7 +239,6 @@ int main(int argc, char **argv) {
 
     Elf_Sym *sym_tab = e->symbol_table;
     if (!sym_tab)  return 0;
-
     int symbol_table_count = e->symbol_table_section->sh_size / sizeof(Elf_Sym);
 
     printf("type bind name");
@@ -258,7 +265,7 @@ int main(int argc, char **argv) {
     elf_print(lib);
     elf_print(main);
 
-    // for phdr - if LOAD, LOAD.
+    // get needed virtual allocation size - max(ph.vaddr + ph.memsz)
     size_t lib_needed_virtual_size = 0;
     Elf_Phdr *p = lib->program_headers;
     for (int i=0; i<lib->image->e_phnum; i++) {
@@ -269,6 +276,7 @@ int main(int argc, char **argv) {
             lib_needed_virtual_size = max;
     }
 
+    // actually load the library into virtual memory properly
     void *lib_load = mmap(NULL, lib_needed_virtual_size,
             PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
@@ -279,6 +287,7 @@ int main(int argc, char **argv) {
         // memset the rest to 0 if filesz < memsz
     }
 
+    // get some useful things from the DYNAMIC section
     Elf_Dyn *lib_dyn_rel  = elf_find_dyn(lib, DT_JMPREL);
     Elf_Dyn *lib_dyn_sym  = elf_find_dyn(lib, DT_SYMTAB);
     Elf_Dyn *lib_dyn_str  = elf_find_dyn(lib, DT_STRTAB);
@@ -301,8 +310,7 @@ int main(int argc, char **argv) {
     int lib_relcnt = lib_relsz / sizeof(Elf_Rela);
     printf("lib relcnt   : %i\n", lib_relcnt);
     
-    // start with early binding I think
-
+    // take a look at the relocations we have
     for (int i=0; i<lib_relcnt; i++) {
         Elf_Rela *rel = lib_rel + i;
         int type = ELF64_R_TYPE(rel->r_info);
