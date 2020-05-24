@@ -358,4 +358,31 @@ typedef Elf32_Rela Elf_Rela;
 extern Elf_Dyn _DYNAMIC[];
 extern Elf_Addr _GLOBAL_OFFSET_TABLE_[];
 
+//
+// old stuff, only here for static demo
+//
+struct elfinfo {
+        Elf *elf;
+
+        size_t shdr_count;
+        size_t shstrndx;
+
+        Elf_Shdr *shdr;
+        Elf_Shdr *strtab;
+        Elf_Shdr *symtab;
+        char *shstrtab;
+};
+
+extern struct elfinfo ngk_elfinfo;
+
+void *elf_at(Elf *elf, size_t offset);
+int elf_verify(Elf *header);
+int elf_load(Elf *header);
+void elf_debugprint(Elf *elf);
+struct elfinfo elf_info(Elf *elf);
+size_t elf_get_sym_off(struct elfinfo *ei, const char *sym_name);
+void elf_resolve_symbols(struct elfinfo *master, struct elfinfo *child);
+int elf_relocate_object(struct elfinfo *ei, uintptr_t new_base);
+void elf_find_symbol_by_addr(struct elfinfo *elf, uintptr_t addr, char *buf);
+
 #endif // LINKER_ELF_H
