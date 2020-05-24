@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -18,6 +19,7 @@ struct elf_metadata {
     void *mem;
     Elf *image;
     void *load_mem;
+    void *load_base;
 
     Elf_Shdr *section_headers;
 
@@ -173,9 +175,38 @@ elf_md *elf_open(const char *name) {
 // pltstub.S
 void elf_lazy_resolve_stub();
 
-void (*elf_lazy_resolve(elf_md *o, long symbol_index))() {
-    printf("lazy resolving %li with elf %p\n", symbol_index, o);
-    exit(0);
+elf_md *lib_md; // the "global symbol table"
+
+void (*elf_lazy_resolve(elf_md *o, long rel_index))() {
+    printf("lazy resolving %li with elf %p -- ", rel_index, o);
+    Elf_Dyn *obj_dyn_rel  = elf_find_dyn(o, DT_JMPREL);
+    Elf_Dyn *obj_dyn_sym  = elf_find_dyn(o, DT_SYMTAB);
+    Elf_Dyn *obj_dyn_str  = elf_find_dyn(o, DT_STRTAB);
+
+    Elf_Rela *obj_rel = o->load_base + obj_dyn_rel->d_un.d_ptr;
+    Elf_Sym *obj_sym  = o->load_base + obj_dyn_sym->d_un.d_ptr;
+    char *obj_str     = o->load_base + obj_dyn_str->d_un.d_ptr;
+
+    Elf_Rela *rel = obj_rel + rel_index;
+    Elf_Addr *got_entry = o->load_base + rel->r_offset;
+
+    int type = ELF64_R_TYPE(rel->r_info);
+    assert(type == R_X86_64_JUMP_SLOT);
+
+    int symix = ELF64_R_SYM(rel->r_info);
+    Elf_Sym *sym = obj_sym + symix;
+    char *sym_name = obj_str + sym->st_name;
+
+    printf("(%s)\n", sym_name);
+
+    Elf_Sym *lib_sym = elf_find_symbol(lib_md, sym_name);
+    if (!lib_sym) {
+        printf("Could not resolve '%s' - abort\n", sym_name);
+        exit(1);
+    }
+
+    *got_entry = (Elf_Addr)lib_md->load_base + lib_sym->st_value;
+    return (void (*)())*got_entry;
 }
 
 void *elf_dyld_load(elf_md *lib) {
@@ -209,6 +240,7 @@ void *elf_dyld_load(elf_md *lib) {
          */
         lib_load = (void *)0;
     }
+    lib->load_base = lib_load;
 
     for (int i=0; i<lib->image->e_phnum; i++) {
         if (p[i].p_type != PT_LOAD)
@@ -371,6 +403,8 @@ int main(int argc, char **argv) {
 
     elf_md *lib = elf_open("liblib.so");
     elf_md *main = elf_open("lmain");
+
+    lib_md = lib; // the "global symbol table"
 
     elf_print(lib);
     elf_print(main);
