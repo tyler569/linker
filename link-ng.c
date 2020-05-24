@@ -325,5 +325,45 @@ int main(int argc, char **argv) {
         printf("  r_addend: %zi\n", rel->r_addend);
         printf("  st_value: %zx\n", sym->st_value);
     }
+
+    // set GOT[1] and GOT[2]
+    lib_got[1] = (Elf_Addr)lib;
+    lib_got[2] = (Elf_Addr)elf_lazy_resolve_stub;
+
+
+    // take a look at the relocations we have
+    for (int i=0; i<lib_relcnt; i++) {
+        Elf_Rela *rel = lib_rel + i;
+        int type = ELF64_R_TYPE(rel->r_info);
+
+        int symix = ELF64_R_SYM(rel->r_info);
+        Elf_Sym *sym = lib_sym + symix;
+
+        Elf_Addr *got_entry = lib_load + rel->r_offset;
+        if (sym->st_value) {
+            *got_entry = (Elf_Addr)lib_load + sym->st_value;
+        } else {
+            // if we don't have a symbol, redirect the GOT entry placed
+            // by the linker to point at the actual entry in the PLT
+            // so that we actually make it to the runtime linker.
+            //
+            // This might be the correct behavior for all symbols, but
+            // for now I'm going to eager load the ones we really have.
+            *got_entry = *got_entry + (Elf_Addr)lib_load;
+        }
+    }
+
+    unsigned long (*lstrlen)(const char *string);
+    Elf_Sym *sym_strlen = elf_find_symbol(lib, "strlen");
+    lstrlen = (unsigned long(*)(const char *))(sym_strlen->st_value + lib_load);
+
+    unsigned long x = lstrlen("Hello World");
+    printf("lib strlen: %lu\n", x);
+
+    void (*lprint)(const char *);
+    Elf_Sym *sym_lprint = elf_find_symbol(lib, "lprint");
+    lprint = (void (*)(const char *))(sym_lprint->st_value + lib_load);
+
+    lprint("Hello World\n");
 }
 
