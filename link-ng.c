@@ -152,12 +152,6 @@ unsigned long elf_hash(const unsigned char *name) {
     return h;
 }
 
-/*
- * elf_load
- * elf_relocate ?? -- how does this work??
- * elf_link
- */
-
 
 elf_md *elf_open(const char *name) {
     int fd = open(name, O_RDONLY);
@@ -171,6 +165,7 @@ elf_md *elf_open(const char *name) {
     elf_md *e = elf_parse(mem);
     return e;
 }
+
 
 // pltstub.S
 void elf_lazy_resolve_stub();
@@ -208,6 +203,7 @@ void (*elf_lazy_resolve(elf_md *o, long rel_index))() {
     *got_entry = (Elf_Addr)lib_md->load_base + lib_sym->st_value;
     return (void (*)())*got_entry;
 }
+
 
 void *elf_dyld_load(elf_md *lib) {
     // get needed virtual allocation size - max(ph.vaddr + ph.memsz)
@@ -319,6 +315,7 @@ void *elf_dyld_load(elf_md *lib) {
     return lib_load;
 }
 
+
 int main(int argc, char **argv) {
 #if 0
     const char *file = argv[1];
@@ -397,6 +394,9 @@ int main(int argc, char **argv) {
     printf("_GOT_   : %p\n", _GLOBAL_OFFSET_TABLE_);
 #endif
 
+    printf("%p\n", _DYNAMIC);
+    printf("%p\n", (void *)_GLOBAL_OFFSET_TABLE_[0]);
+
     // we want to:
     // take a "libc" .so dynamic library and load it into memory
     // take a "main" dynamic executable and load + link it to libc
@@ -412,17 +412,17 @@ int main(int argc, char **argv) {
     elf_dyld_load(lib);
     elf_dyld_load(main);
 
-
-
+    /*
     void (*lprint)(const char *);
     Elf_Sym *sym_lprint = elf_find_symbol(lib, "lprint");
     lprint = (void (*)(const char *))(sym_lprint->st_value + lib->load_mem);
 
     printf("lib hello world: ");
     lprint("Hello World\n");
+    */
 
     void (*l_start)();
-    l_start = (void (*)())(main->image->e_entry);
+    l_start = (void (*)())(main->load_base + main->image->e_entry);
     l_start();
 }
 

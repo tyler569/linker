@@ -19,7 +19,7 @@ lmain.o: lmain.c lib.h
 	$(CC) -I. -fpic -nostdlib -c $< -o $@
 
 lmain: lmain.o rt.o liblib.so
-	ld -o $@ -dynamic-linker /home/tyler/dyld -L. rt.o $< -llib
+	ld -o $@ -pie -dynamic-linker /home/tyler/dyld -L. rt.o $< -llib
 
 clean:
 	rm -f link-ng lmain *.so *.o
