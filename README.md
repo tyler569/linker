@@ -1,20 +1,25 @@
 
 ### A simple linker
 
-This project implements a simple ELF dynamic linker.
+This project implements a simple ELF toolkit, including rudimentary static linking of relocatable objects (`.o` files) and work-in-progress dynamic linking.
 
-It performs relocations on a relocateable ELF object (commonly, a '.o' file).
+The main purpose of this project is to be the testbed for the kernel modeule loader and userspace dynamic linker of the [nightingale operating system](https://github.com/tyler569/nightingale).
 
-To see this in action, `mod.c` is compiled by the makefile to a relocateable object, which is linked my `link.c` into an object that can be loaded into the process memory image of `demo.c` and have its functions called.
-
-To see the demo:
-
+To see what I have in action, the old static linking demo is available in the `static/` folder of this project, to run it, in the folder:
 ```
-$ make
-$ ./link
-$ ./demo
+make
+./link
+./demo
 ```
 
-There is a lot of things to be improved here, including:
-- I shouldn't be trolling the section headers for the string table and symbol table repeatedly, these are common enough that I should probably store an info structure.
-- This currently works for x86\_64 only, x86\_32 should be pretty easy, and other architectures have not been considered.
+This demo creates a relocatable object, `mod.o`, and then `./link` resolves its unresolved symbols with the `demo` binary. When run, `demo` loads the object into its address space and calls a function in the object, which in turn calls functions in `demo`.
+
+
+My dynamic linking work is in the main folder of this repo, to see that you can run
+```
+make
+./link-ng
+```
+
+At time of writing, that loads `liblib.so` into memory, updates the global offset table to reflect its loaded location, and calls functions in the library. This will evolve over time as I work on making this project a proper userspace program interperter for nightingale.
+
