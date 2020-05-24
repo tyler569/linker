@@ -3,6 +3,8 @@
 
 typedef unsigned long ulong;
 
+ulong some_global;
+
 long __syscall1(ulong number, ulong arg) {
     long ret;
     asm volatile (
@@ -36,5 +38,9 @@ ulong strlen(const char *str) {
 void lprint(const char *message) {
     ulong len = strlen(message);
     __syscall3(__NR_write, 1, (ulong)message, len);
+}
+
+void inc_global() {
+    some_global += 1;
 }
 

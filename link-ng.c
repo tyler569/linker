@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 #include <assert.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -208,7 +209,7 @@ void (*elf_lazy_resolve(elf_md *o, long rel_index))() {
 void *elf_dyld_load(elf_md *lib) {
     // get needed virtual allocation size - max(ph.vaddr + ph.memsz)
     size_t lib_needed_virtual_size = 0;
-    uintptr_t lib_base = 0xFFFFFFFFFFFFFFFF;
+    uintptr_t lib_base = UINTPTR_MAX;
     Elf_Phdr *p = lib->program_headers;
     for (int i=0; i<lib->image->e_phnum; i++) {
         if (p[i].p_type != PT_LOAD)
@@ -247,31 +248,38 @@ void *elf_dyld_load(elf_md *lib) {
     }
 
     // get some useful things from the DYNAMIC section
-    Elf_Dyn *lib_dyn_rel  = elf_find_dyn(lib, DT_JMPREL);
+    Elf_Dyn *lib_dyn_jrel = elf_find_dyn(lib, DT_JMPREL);
+    Elf_Dyn *lib_dyn_jrelsz = elf_find_dyn(lib, DT_PLTRELSZ);
+    Elf_Dyn *lib_dyn_drel = elf_find_dyn(lib, DT_RELA);
+    Elf_Dyn *lib_dyn_drelsz = elf_find_dyn(lib, DT_RELASZ);
     Elf_Dyn *lib_dyn_sym  = elf_find_dyn(lib, DT_SYMTAB);
     Elf_Dyn *lib_dyn_str  = elf_find_dyn(lib, DT_STRTAB);
     Elf_Dyn *lib_dyn_got  = elf_find_dyn(lib, DT_PLTGOT);
-    Elf_Dyn *lib_dyn_relsz = elf_find_dyn(lib, DT_PLTRELSZ);
 
-    Elf_Rela *lib_rel = lib_load + lib_dyn_rel->d_un.d_ptr;
+    Elf_Rela *lib_jrel = lib_load + lib_dyn_jrel->d_un.d_ptr;
+    Elf_Rela *lib_drel = lib_load + lib_dyn_drel->d_un.d_ptr;
     Elf_Sym *lib_sym  = lib_load + lib_dyn_sym->d_un.d_ptr;
     char *lib_str     = lib_load + lib_dyn_str->d_un.d_ptr;
     Elf_Addr *lib_got = lib_load + lib_dyn_got->d_un.d_ptr;
-    size_t lib_relsz  = lib_dyn_relsz->d_un.d_val;
-    int lib_relcnt = lib_relsz / sizeof(Elf_Rela);
+    size_t lib_jrelsz  = lib_dyn_jrelsz->d_un.d_val;
+    size_t lib_drelsz  = lib_dyn_drelsz->d_un.d_val;
+    int lib_jrelcnt = lib_jrelsz / sizeof(Elf_Rela);
+    int lib_drelcnt = lib_drelsz / sizeof(Elf_Rela);
 
 
     printf("lib load base: %p\n", lib_load);
     printf("lib dynsym   : %p\n", lib_sym);
     printf("lib pltgot   : %p\n", lib_got);
     printf("lib dynstr   : %p\n", lib_str);
-    printf("lib dynrel   : %p\n", lib_rel);
-    printf("lib relsz    : %zu\n", lib_relsz);
-    printf("lib relcnt   : %i\n", lib_relcnt);
+    printf("lib dynrel   : %p\n", lib_jrel);
+    printf("lib datrel   : %p\n", lib_drel);
+    printf("lib relsz    : %zu\n", lib_jrelsz);
+    printf("lib relcnt   : %i\n", lib_jrelcnt);
+    printf("lib drelcnt  : %i\n", lib_drelcnt);
     
     // take a look at the relocations we have
-    for (int i=0; i<lib_relcnt; i++) {
-        Elf_Rela *rel = lib_rel + i;
+    for (int i=0; i<lib_jrelcnt; i++) {
+        Elf_Rela *rel = lib_jrel + i;
         int type = ELF64_R_TYPE(rel->r_info);
 
         int symix = ELF64_R_SYM(rel->r_info);
@@ -291,10 +299,11 @@ void *elf_dyld_load(elf_md *lib) {
     lib_got[2] = (Elf_Addr)elf_lazy_resolve_stub;
 
 
-    // take a look at the relocations we have
-    for (int i=0; i<lib_relcnt; i++) {
-        Elf_Rela *rel = lib_rel + i;
+    // Do what we can with PLT relocations
+    for (int i=0; i<lib_jrelcnt; i++) {
+        Elf_Rela *rel = lib_jrel + i;
         int type = ELF64_R_TYPE(rel->r_info);
+        assert(type == R_X86_64_JUMP_SLOT);
 
         int symix = ELF64_R_SYM(rel->r_info);
         Elf_Sym *sym = lib_sym + symix;
@@ -312,6 +321,36 @@ void *elf_dyld_load(elf_md *lib) {
             *got_entry = *got_entry + (Elf_Addr)lib_load;
         }
     }
+
+    // Resolve GOT relocations
+    for (int i=0; i<lib_drelcnt; i++) {
+        Elf_Rela *rel = lib_drel + i;
+        int type = ELF64_R_TYPE(rel->r_info);
+        assert(type == R_X86_64_GLOB_DAT);
+
+        int symix = ELF64_R_SYM(rel->r_info);
+        Elf_Sym *sym = lib_sym + symix;
+
+        Elf_Addr *got_entry = lib_load + rel->r_offset;
+        if (sym->st_value) {
+            *got_entry = (Elf_Addr)lib_load + sym->st_value;
+        } else {
+            char *sym_name = lib_str + sym->st_name;
+            if (!lib_md) {
+                printf("unable to resolve data symbol %s -- abort\n", sym_name);
+                exit(1);
+            }
+
+            Elf_Sym *lib_sym = elf_find_symbol(lib_md, sym_name);
+            if (!lib_sym) {
+                printf("unable to resolve data symbol %s -- abort\n", sym_name);
+                exit(1);
+            }
+
+            *got_entry = (Elf_Addr)lib_md->load_base + lib_sym->st_value;
+        }
+    }
+
     return lib_load;
 }
 
