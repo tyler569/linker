@@ -17,6 +17,7 @@ void fail(const char *message) {
 struct elf_metadata {
     void *mem;
     Elf *image;
+    void *load_mem;
 
     Elf_Shdr *section_headers;
 
@@ -177,6 +178,115 @@ void (*elf_lazy_resolve(elf_md *o, long symbol_index))() {
     exit(0);
 }
 
+void *elf_dyld_load(elf_md *lib) {
+    // get needed virtual allocation size - max(ph.vaddr + ph.memsz)
+    size_t lib_needed_virtual_size = 0;
+    uintptr_t lib_base = 0xFFFFFFFFFFFFFFFF;
+    Elf_Phdr *p = lib->program_headers;
+    for (int i=0; i<lib->image->e_phnum; i++) {
+        if (p[i].p_type != PT_LOAD)
+            continue;
+        size_t max = p[i].p_vaddr + p[i].p_memsz;
+        if (max > lib_needed_virtual_size)
+            lib_needed_virtual_size = max;
+        size_t base = p[i].p_vaddr;
+        if (base < lib_base)
+            lib_base = base;
+    }
+
+    void *load_request = (void *)lib_base;
+
+    // actually load the library into virtual memory properly
+    void *lib_load = mmap(load_request, lib_needed_virtual_size - lib_base,
+            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    lib->load_mem = lib_load;
+
+    if (lib_base != 0) {
+        /*
+         * The ELF specified a base, meaning all virtual address lookups from
+         * the ELF data from here out are _already correct_. You only add
+         * this base if the ELF actually specified a base of 0.
+         */
+        lib_load = (void *)0;
+    }
+
+    for (int i=0; i<lib->image->e_phnum; i++) {
+        if (p[i].p_type != PT_LOAD)
+            continue;
+        memcpy(lib_load + p[i].p_vaddr, lib->mem + p[i].p_offset, p[i].p_filesz);
+
+        // memset the rest to 0 if filesz < memsz
+    }
+
+    // get some useful things from the DYNAMIC section
+    Elf_Dyn *lib_dyn_rel  = elf_find_dyn(lib, DT_JMPREL);
+    Elf_Dyn *lib_dyn_sym  = elf_find_dyn(lib, DT_SYMTAB);
+    Elf_Dyn *lib_dyn_str  = elf_find_dyn(lib, DT_STRTAB);
+    Elf_Dyn *lib_dyn_got  = elf_find_dyn(lib, DT_PLTGOT);
+    Elf_Dyn *lib_dyn_relsz = elf_find_dyn(lib, DT_PLTRELSZ);
+
+    Elf_Rela *lib_rel = lib_load + lib_dyn_rel->d_un.d_ptr;
+    Elf_Sym *lib_sym  = lib_load + lib_dyn_sym->d_un.d_ptr;
+    char *lib_str     = lib_load + lib_dyn_str->d_un.d_ptr;
+    Elf_Addr *lib_got = lib_load + lib_dyn_got->d_un.d_ptr;
+    size_t lib_relsz  = lib_dyn_relsz->d_un.d_val;
+    int lib_relcnt = lib_relsz / sizeof(Elf_Rela);
+
+
+    printf("lib load base: %p\n", lib_load);
+    printf("lib dynsym   : %p\n", lib_sym);
+    printf("lib pltgot   : %p\n", lib_got);
+    printf("lib dynstr   : %p\n", lib_str);
+    printf("lib dynrel   : %p\n", lib_rel);
+    printf("lib relsz    : %zu\n", lib_relsz);
+    printf("lib relcnt   : %i\n", lib_relcnt);
+    
+    // take a look at the relocations we have
+    for (int i=0; i<lib_relcnt; i++) {
+        Elf_Rela *rel = lib_rel + i;
+        int type = ELF64_R_TYPE(rel->r_info);
+
+        int symix = ELF64_R_SYM(rel->r_info);
+        Elf_Sym *sym = lib_sym + symix;
+
+        char *sym_name = lib_str + sym->st_name;
+        printf("relocation: type: %i, symbol: '%s'\n", type, sym_name);
+
+        printf("  r_offset: %zx\n", rel->r_offset);
+        printf("  r_addend: %zi\n", rel->r_addend);
+        printf("  st_value: %zx\n", sym->st_value);
+    }
+
+
+    // set GOT[1] and GOT[2]
+    lib_got[1] = (Elf_Addr)lib;
+    lib_got[2] = (Elf_Addr)elf_lazy_resolve_stub;
+
+
+    // take a look at the relocations we have
+    for (int i=0; i<lib_relcnt; i++) {
+        Elf_Rela *rel = lib_rel + i;
+        int type = ELF64_R_TYPE(rel->r_info);
+
+        int symix = ELF64_R_SYM(rel->r_info);
+        Elf_Sym *sym = lib_sym + symix;
+
+        Elf_Addr *got_entry = lib_load + rel->r_offset;
+        if (sym->st_value) {
+            *got_entry = (Elf_Addr)lib_load + sym->st_value;
+        } else {
+            // if we don't have a symbol, redirect the GOT entry placed
+            // by the linker to point at the actual entry in the PLT
+            // so that we actually make it to the runtime linker.
+            //
+            // This might be the correct behavior for all symbols, but
+            // for now I'm going to eager load the ones we really have.
+            *got_entry = *got_entry + (Elf_Addr)lib_load;
+        }
+    }
+    return lib_load;
+}
+
 int main(int argc, char **argv) {
 #if 0
     const char *file = argv[1];
@@ -265,105 +375,20 @@ int main(int argc, char **argv) {
     elf_print(lib);
     elf_print(main);
 
-    // get needed virtual allocation size - max(ph.vaddr + ph.memsz)
-    size_t lib_needed_virtual_size = 0;
-    Elf_Phdr *p = lib->program_headers;
-    for (int i=0; i<lib->image->e_phnum; i++) {
-        if (p[i].p_type != PT_LOAD)
-            continue;
-        size_t max = p[i].p_vaddr + p[i].p_memsz;
-        if (max > lib_needed_virtual_size)
-            lib_needed_virtual_size = max;
-    }
-
-    // actually load the library into virtual memory properly
-    void *lib_load = mmap(NULL, lib_needed_virtual_size,
-            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
-    for (int i=0; i<lib->image->e_phnum; i++) {
-        if (p[i].p_type != PT_LOAD)
-            continue;
-        memcpy(lib_load + p[i].p_vaddr, lib->mem + p[i].p_offset, p[i].p_filesz);
-        // memset the rest to 0 if filesz < memsz
-    }
-
-    // get some useful things from the DYNAMIC section
-    Elf_Dyn *lib_dyn_rel  = elf_find_dyn(lib, DT_JMPREL);
-    Elf_Dyn *lib_dyn_sym  = elf_find_dyn(lib, DT_SYMTAB);
-    Elf_Dyn *lib_dyn_str  = elf_find_dyn(lib, DT_STRTAB);
-    Elf_Dyn *lib_dyn_got  = elf_find_dyn(lib, DT_PLTGOT);
-    Elf_Dyn *lib_dyn_relsz = elf_find_dyn(lib, DT_PLTRELSZ);
-
-    Elf_Rela *lib_rel = lib_load + lib_dyn_rel->d_un.d_ptr;
-    Elf_Sym *lib_sym  = lib_load + lib_dyn_sym->d_un.d_ptr;
-    char *lib_str     = lib_load + lib_dyn_str->d_un.d_ptr;
-    Elf_Addr *lib_got = lib_load + lib_dyn_got->d_un.d_ptr;
-    size_t lib_relsz  = lib_dyn_relsz->d_un.d_val;
-
-    printf("lib load base: %p\n", lib_load);
-    printf("lib dynsym   : %p\n", lib_sym);
-    printf("lib pltgot   : %p\n", lib_got);
-    printf("lib dynstr   : %p\n", lib_str);
-    printf("lib dynrel   : %p\n", lib_rel);
-    printf("lib relsz    : %zu\n", lib_relsz);
-
-    int lib_relcnt = lib_relsz / sizeof(Elf_Rela);
-    printf("lib relcnt   : %i\n", lib_relcnt);
-    
-    // take a look at the relocations we have
-    for (int i=0; i<lib_relcnt; i++) {
-        Elf_Rela *rel = lib_rel + i;
-        int type = ELF64_R_TYPE(rel->r_info);
-
-        int symix = ELF64_R_SYM(rel->r_info);
-        Elf_Sym *sym = lib_sym + symix;
-
-        char *sym_name = lib_str + sym->st_name;
-        printf("relocation: type: %i, symbol: '%s'\n", type, sym_name);
-
-        printf("  r_offset: %zx\n", rel->r_offset);
-        printf("  r_addend: %zi\n", rel->r_addend);
-        printf("  st_value: %zx\n", sym->st_value);
-    }
-
-    // set GOT[1] and GOT[2]
-    lib_got[1] = (Elf_Addr)lib;
-    lib_got[2] = (Elf_Addr)elf_lazy_resolve_stub;
+    elf_dyld_load(lib);
+    elf_dyld_load(main);
 
 
-    // take a look at the relocations we have
-    for (int i=0; i<lib_relcnt; i++) {
-        Elf_Rela *rel = lib_rel + i;
-        int type = ELF64_R_TYPE(rel->r_info);
-
-        int symix = ELF64_R_SYM(rel->r_info);
-        Elf_Sym *sym = lib_sym + symix;
-
-        Elf_Addr *got_entry = lib_load + rel->r_offset;
-        if (sym->st_value) {
-            *got_entry = (Elf_Addr)lib_load + sym->st_value;
-        } else {
-            // if we don't have a symbol, redirect the GOT entry placed
-            // by the linker to point at the actual entry in the PLT
-            // so that we actually make it to the runtime linker.
-            //
-            // This might be the correct behavior for all symbols, but
-            // for now I'm going to eager load the ones we really have.
-            *got_entry = *got_entry + (Elf_Addr)lib_load;
-        }
-    }
-
-    unsigned long (*lstrlen)(const char *string);
-    Elf_Sym *sym_strlen = elf_find_symbol(lib, "strlen");
-    lstrlen = (unsigned long(*)(const char *))(sym_strlen->st_value + lib_load);
-
-    unsigned long x = lstrlen("Hello World");
-    printf("lib strlen: %lu\n", x);
 
     void (*lprint)(const char *);
     Elf_Sym *sym_lprint = elf_find_symbol(lib, "lprint");
-    lprint = (void (*)(const char *))(sym_lprint->st_value + lib_load);
+    lprint = (void (*)(const char *))(sym_lprint->st_value + lib->load_mem);
 
+    printf("lib hello world: ");
     lprint("Hello World\n");
+
+    void (*l_start)();
+    l_start = (void (*)())(main->image->e_entry);
+    l_start();
 }
 
