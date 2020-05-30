@@ -21,6 +21,7 @@ struct elf_metadata {
     Elf *image;
     void *load_mem;
     void *load_base;
+    size_t file_size;
 
     Elf_Shdr *section_headers;
 
@@ -164,6 +165,7 @@ elf_md *elf_open(const char *name) {
 
     void *mem = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
     elf_md *e = elf_parse(mem);
+    e->file_size = len;
     return e;
 }
 
@@ -355,84 +357,31 @@ void *elf_dyld_load(elf_md *lib) {
 }
 
 
-int main(int argc, char **argv) {
-#if 0
-    const char *file = argv[1];
-    if (argc == 1)  file = "mod.o";
+void *elf_relo_load(elf_md *relo) {
+    // get needed virtual allocation size (file size + sum of all common
+    // symbol sizes)
+    size_t relo_needed_virtual_size = relo->file_size;
+    assert(relo_needed_virtual_size > 0);
 
-    int fd = open(file, O_RDONLY);
-    if (fd < 0)  fail("open");
+    assert(relo->symbol_table);
+    assert(relo->string_table);
 
-    struct stat statbuf;
-    fstat(fd, &statbuf);
-    off_t len = statbuf.st_size;
-
-    void *mem = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
-    Elf *elf = mem;
-
-    printf("ident: %3s\n", elf->e_ident + 1);
-    printf("type:  ");
-    switch (elf->e_type) {
-    case ET_REL:  printf("relocatable\n"); break;
-    case ET_EXEC: printf("executable\n"); break;
-    case ET_DYN:  printf("dynamic\n"); break;
-    default: printf("unknown\n"); break;
-    }
-    printf("shoff: %lu\n", elf->e_shoff);
-    printf("phoff: %lu\n", elf->e_phoff);
-
-    if (elf->e_shnum > 0) {
-        printf("section headers:\n");
-        Elf_Shdr *shdr = mem + elf->e_shoff;
-        Elf_Shdr *shdr_string_table_section = shdr + elf->e_shstrndx;
-        char *shdr_string_table = mem + shdr_string_table_section->sh_offset;
-
-        for (int i=0; i<elf->e_shnum; i++) {
-            Elf_Shdr *section = shdr + i;
-            char *name = shdr_string_table + section->sh_name;
-            printf("section: %s\n", name);
-        }
-    }
-    if (elf->e_phnum > 0) {
-        printf("program headers\n");
-        Elf_Phdr *phdr = mem + elf->e_phoff;
-
-        for (int i=0; i<elf->e_phnum; i++) {
-            Elf_Phdr *header = phdr + i;
-            printf("header: ");
-            switch (header->p_type) {
-            case PT_NULL: printf("unused\n"); break;
-            case PT_LOAD: printf("load section\n"); break;
-            case PT_DYNAMIC: printf("dynamic section\n"); break;
-            case PT_INTERP: printf("program interpreter\n"); break;
-            case PT_NOTE: printf("note\n"); break;
-            case PT_PHDR: printf("program headers\n"); break;
-            case PT_TLS: printf("thread-local storage\n"); break;
-            default: printf("unknown\n"); break;
-            }
+    for (int i=0; i<relo->symbol_count; i++) {
+        Elf_Sym *sym = relo->symbol_table + i;
+        if (sym->st_shndx == 65522) { // happy magic numbers
+            // consider the following: alignment?
+            // should I just do this later?
+            relo_needed_virtual_size += sym->st_size;
         }
     }
 
-    elf_md *e = elf_parse(mem);
+    printf("relo_needed_virtual_size is %zu\n", relo_needed_virtual_size);
+}
 
-    Elf_Sym *sym_tab = e->symbol_table;
-    if (!sym_tab)  return 0;
-    int symbol_table_count = e->symbol_table_section->sh_size / sizeof(Elf_Sym);
+void elf_relo_symbol_resolve(elf_md *relo, elf_md *base) {}
 
-    printf("type bind name");
-    for (int i=0; i<symbol_table_count; i++) {
-        Elf_Sym *symbol = sym_tab + i;
-        int type = ELF_ST_TYPE(symbol->st_info);
-        int bind = ELF_ST_BIND(symbol->st_info);
-        // if (bind != 1) continue;
-        const char *symbol_name = e->string_table + symbol->st_name;
-        printf("symbol: %i %i %s\n", type, bind, symbol_name);
-    }
 
-    printf("_DYNAMIC: %p\n", _DYNAMIC);
-    printf("_GOT_   : %p\n", _GLOBAL_OFFSET_TABLE_);
-#endif
-
+void test_dyld() {
     printf("%p\n", _DYNAMIC);
     printf("%p\n", (void *)_GLOBAL_OFFSET_TABLE_[0]);
 
@@ -451,17 +400,19 @@ int main(int argc, char **argv) {
     elf_dyld_load(lib);
     elf_dyld_load(main);
 
-    /*
-    void (*lprint)(const char *);
-    Elf_Sym *sym_lprint = elf_find_symbol(lib, "lprint");
-    lprint = (void (*)(const char *))(sym_lprint->st_value + lib->load_mem);
-
-    printf("lib hello world: ");
-    lprint("Hello World\n");
-    */
-
     void (*l_start)();
     l_start = (void (*)())(main->load_base + main->image->e_entry);
     l_start();
+}
+
+void test_modload() {
+    elf_md *relo = elf_open("lib.o");
+    elf_print(relo);
+    elf_relo_load(relo);
+}
+
+int main(int argc, char **argv) {
+    // test_modload();
+    test_dyld();
 }
 

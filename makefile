@@ -9,8 +9,11 @@ all: link-ng liblib.so lmain
 link-ng: link-ng.c pltstub.S
 	$(CC) $(CFLAGS) $^ -o $@
 
-liblib.so: lib.c lib.h
-	$(CC) -I. -fpic -nostdlib -shared $< -o $@
+lib.o: lib.c lib.h
+	$(CC) -c -I. -fpic -nostdlib $< -o $@
+
+liblib.so: lib.o
+	$(CC) -fpie -nostdlib -shared $< -o $@
 
 rt.o: rt.c
 	$(CC) -I. -fpic -nostdlib -c $< -o $@
