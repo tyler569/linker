@@ -4,6 +4,7 @@
 typedef unsigned long ulong;
 
 ulong some_global;
+ulong another_global = 100;
 
 long __syscall1(ulong number, ulong arg) {
     long ret;
@@ -42,5 +43,6 @@ void lprint(const char *message) {
 
 void inc_global() {
     some_global += 1;
+    another_global += 1;
 }
 
