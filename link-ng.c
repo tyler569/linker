@@ -361,6 +361,7 @@ void *elf_relo_load(elf_md *relo) {
     // get needed virtual allocation size (file size + sum of all common
     // symbol sizes)
     size_t relo_needed_virtual_size = relo->file_size;
+    size_t relo_common_size = 0;
     assert(relo_needed_virtual_size > 0);
 
     assert(relo->symbol_table);
@@ -371,11 +372,17 @@ void *elf_relo_load(elf_md *relo) {
         if (sym->st_shndx == 65522) { // happy magic numbers
             // consider the following: alignment?
             // should I just do this later?
-            relo_needed_virtual_size += sym->st_size;
+            relo_common_size += sym->st_size;
         }
     }
 
-    printf("relo_needed_virtual_size is %zu\n", relo_needed_virtual_size);
+    relo_needed_virtual_size += relo_common_size;
+
+    void *relo_load = mmap(NULL, relo_needed_virtual_size,
+            PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    relo->load_mem = relo_load;
+    memcpy(relo_load, relo->mem, relo->file_size);
+    memset(relo_load + relo->file_size, 0, relo_common_size);
 }
 
 void elf_relo_symbol_resolve(elf_md *relo, elf_md *base) {}
