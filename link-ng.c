@@ -383,12 +383,18 @@ void *elf_relo_load(elf_md *relo) {
     relo->load_mem = relo_load;
     memcpy(relo_load, relo->mem, relo->file_size);
     memset(relo_load + relo->file_size, 0, relo_common_size);
+
+    for (int i=0; i<relo->image->e_shnum; i++) {
+        Elf_Shdr *sec = relo->section_headers + i;
+        // TODO: find relocation sections, iterate over relocations,
+        // perform relocations.
+    }
 }
 
 void elf_relo_symbol_resolve(elf_md *relo, elf_md *base) {}
 
 
-void test_dyld() {
+void test_dyn_ld() {
     printf("%p\n", _DYNAMIC);
     printf("%p\n", (void *)_GLOBAL_OFFSET_TABLE_[0]);
 
@@ -412,14 +418,19 @@ void test_dyld() {
     l_start();
 }
 
-void test_modload() {
+void test_mod_ld() {
     elf_md *relo = elf_open("lib.o");
     elf_print(relo);
     elf_relo_load(relo);
+
+    Elf_Sym *lprint_sym = elf_find_symbol(relo, "lprint");
+    void (*lprint)(const char *);
+    lprint = (void (*)(const char *))relo->load_base + lprint_sym->st_value;
+    lprint("Hello World from the module\n");
 }
 
 int main(int argc, char **argv) {
-    // test_modload();
-    test_dyld();
+    // test_mod_ld();
+    test_dyn_ld();
 }
 
