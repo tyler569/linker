@@ -10,3 +10,4 @@ tests/program
 tests/demo
 static-test/program
 link-rel
+lib.ko

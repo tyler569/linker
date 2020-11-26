@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,13 +19,16 @@ static inline uintptr_t round_up(uintptr_t val, uintptr_t place) {
     return round_down(val + place - 1, place);
 }
 
-void elf_relocate(elf_md *e, Elf_Rela *rela) {
+void *elf_sym_addr(elf_md *e, Elf_Sym *sym);
+
+void elf_relocate(elf_md *e, Elf_Shdr *modify_section, Elf_Rela *rela) {
     size_t sym_index = ELF64_R_SYM(rela->r_info);
     Elf_Sym *sym = &e->symbol_table[sym_index];
     int rel_type = ELF64_R_TYPE(rela->r_info);
     const char *name = elf_symbol_name(e, sym);
 
-    Elf_Shdr *section;
+    /*
+     * Elf_Shdr *section;
     if (sym->st_shndx < 0xFF00) {
         section = &e->section_headers[sym->st_shndx];
     } else if (sym->st_shndx == SHN_COMMON) {
@@ -36,24 +38,42 @@ void elf_relocate(elf_md *e, Elf_Rela *rela) {
         // I'm pretty sure this is impossible, you can't relocate
         // something that doesn't exist. Let's test that assumption
         assert("Relocating non-extant symbol" && 0);
-    }
+    }*/
 
-    size_t value = sym->st_value;
+    { // debug
+    const char *section_name = &e->shdr_string_table[modify_section->sh_name];
+    printf("in section: %s\n", section_name);
+    printf("base: %#lx\n", modify_section->sh_addr);
+    }
     size_t section_offset = rela->r_offset;
-    void *relocation = (char *)section->sh_addr + section_offset;
+    void *relocation = (char *)modify_section->sh_addr + section_offset;
+
+    uint64_t A = rela->r_addend;
+    uint64_t P = (uint64_t)relocation;
+    uint64_t S = (uint64_t)elf_sym_addr(e, sym);
+
+    // printf("A: %#lx\n", A);
+    // printf("P: %#lx\n", P);
+    // printf("S: %#lx\n", S);
+
+    printf("relocation @ %p ", relocation);
+    switch (rel_type) {
+    case R_X86_64_NONE: printf("none\n"); break;
+    case R_X86_64_64: printf("64: %#lx\n", S + A); break;
+    case R_X86_64_32: printf("32: %#x\n", (uint32_t)(S + A)); break;
+    case R_X86_64_32S: printf("32S: %#x\n", (int32_t)(S + A)); break;
+    case R_X86_64_PC32: // FALLTHROUGH
+    case R_X86_64_PLT32: printf("PC32: %#x\n", (uint32_t)(S + A - P)); break;
+    }
 
     switch (rel_type) {
     case R_X86_64_NONE: break;
-    case R_X86_64_64: *(uint64_t *)relocation = value; break;
-    case R_X86_64_32: *(uint32_t *)relocation = value; break;
-    case R_X86_64_32S: *(int32_t *)relocation = value; break;
-    case R_X86_64_PC32:
-    case R_X86_64_PLT32:
-        value -= (uint64_t)section_offset; // this may be the wrong thing
-        *(uint32_t *)relocation = value;
-        break;
-    default:
-        printf("invalid relocation type: %i\n", rel_type);
+    case R_X86_64_64: *(uint64_t *)relocation = S + A; break;
+    case R_X86_64_32: *(uint32_t *)relocation = S + A; break;
+    case R_X86_64_32S: *(int32_t *)relocation = S + A; break;
+    case R_X86_64_PC32: // FALLTHROUGH
+    case R_X86_64_PLT32: *(uint32_t *)relocation = S + A - P; break;
+    default: printf("invalid relocation type: %i\n", rel_type);
     }
 }
 
@@ -117,17 +137,16 @@ elf_md *elf_relo_load(elf_md *relo) {
 
     for (int i=0; i<relo->image->e_shnum; i++) {
         Elf_Shdr *sec = relo->section_headers + i;
-        // TODO: find relocation sections, iterate over relocations,
-        // perform relocations.
         if (sec->sh_type != SHT_RELA) {
             continue;
+        }
 
-            size_t section_size = sec->sh_size;
-            size_t rela_count = section_size / sizeof(Elf_Rela);
-            for (size_t i=0; i<rela_count; i++) {
-                Elf_Rela *rela = (Elf_Rela *)sec->sh_addr + i;
-                elf_relocate(relo, rela);
-            }
+        Elf_Shdr *modify_section = relo->section_headers + sec->sh_info;
+        size_t section_size = sec->sh_size;
+        size_t rela_count = section_size / sizeof(Elf_Rela);
+        for (size_t i=0; i<rela_count; i++) {
+            Elf_Rela *rela = (Elf_Rela *)sec->sh_addr + i;
+            elf_relocate(relo, modify_section, rela);
         }
     }
 
@@ -160,7 +179,7 @@ void *elf_sym_addr(elf_md *e, Elf_Sym *sym) {
 
 
 void test_mod_ld() {
-    elf_md *relo = elf_open("lib.o");
+    elf_md *relo = elf_open("lib.ko");
     elf_print(relo);
     relo = elf_relo_load(relo);
     elf_print(relo);

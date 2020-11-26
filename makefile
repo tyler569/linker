@@ -1,10 +1,10 @@
 
 INCLUDE := -Iinclude
-CFLAGS += $(INCLUDE) -g
+CFLAGS += $(INCLUDE) -g -fsanitize=address
 
 .PHONY: all
 
-all: link-ng link-rel lib.o liblib.so lmain
+all: link-ng link-rel lib.ko lib.o liblib.so lmain
 
 link-ng: link-ng.c elf-ng.c pltstub.S
 	$(CC) $(CFLAGS) $^ -o $@
@@ -14,6 +14,9 @@ link-rel: link-ngrel.c elf-ng.c
 
 lib.o: lib.c lib.h
 	$(CC) -c -I. -fpic -nostdlib $< -o $@
+
+lib.ko: lib.c lib.h
+	$(CC) -c -I. -static -fno-pic -nostdlib $< -o $@
 
 liblib.so: lib.o
 	$(CC) -fpie -nostdlib -shared $< -o $@
