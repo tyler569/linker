@@ -27,24 +27,6 @@ void elf_relocate(elf_md *e, Elf_Shdr *modify_section, Elf_Rela *rela) {
     int rel_type = ELF64_R_TYPE(rela->r_info);
     const char *name = elf_symbol_name(e, sym);
 
-    /*
-     * Elf_Shdr *section;
-    if (sym->st_shndx < 0xFF00) {
-        section = &e->section_headers[sym->st_shndx];
-    } else if (sym->st_shndx == SHN_COMMON) {
-        section = elf_find_section(e, ".bss");
-    } else if (sym->st_shndx == SHN_UNDEF) {
-        printf("not relocating %s - undefined?\n", name);
-        // I'm pretty sure this is impossible, you can't relocate
-        // something that doesn't exist. Let's test that assumption
-        assert("Relocating non-extant symbol" && 0);
-    }*/
-
-    { // debug
-    const char *section_name = &e->shdr_string_table[modify_section->sh_name];
-    printf("in section: %s\n", section_name);
-    printf("base: %#lx\n", modify_section->sh_addr);
-    }
     size_t section_offset = rela->r_offset;
     void *relocation = (char *)modify_section->sh_addr + section_offset;
 
@@ -55,16 +37,15 @@ void elf_relocate(elf_md *e, Elf_Shdr *modify_section, Elf_Rela *rela) {
     // printf("A: %#lx\n", A);
     // printf("P: %#lx\n", P);
     // printf("S: %#lx\n", S);
-
-    printf("relocation @ %p ", relocation);
-    switch (rel_type) {
-    case R_X86_64_NONE: printf("none\n"); break;
-    case R_X86_64_64: printf("64: %#lx\n", S + A); break;
-    case R_X86_64_32: printf("32: %#x\n", (uint32_t)(S + A)); break;
-    case R_X86_64_32S: printf("32S: %#x\n", (int32_t)(S + A)); break;
-    case R_X86_64_PC32: // FALLTHROUGH
-    case R_X86_64_PLT32: printf("PC32: %#x\n", (uint32_t)(S + A - P)); break;
-    }
+    // printf("relocation @ %p ", relocation);
+    // switch (rel_type) {
+    // case R_X86_64_NONE: printf("none\n"); break;
+    // case R_X86_64_64: printf("64: %#lx\n", S + A); break;
+    // case R_X86_64_32: printf("32: %#x\n", (uint32_t)(S + A)); break;
+    // case R_X86_64_32S: printf("32S: %#x\n", (int32_t)(S + A)); break;
+    // case R_X86_64_PC32: // FALLTHROUGH
+    // case R_X86_64_PLT32: printf("PC32: %#x\n", (uint32_t)(S + A - P)); break;
+    // }
 
     switch (rel_type) {
     case R_X86_64_NONE: break;
@@ -172,8 +153,6 @@ void *elf_sym_addr(elf_md *e, Elf_Sym *sym) {
         return (char *)e->bss_base + sym->st_value;
     }
     Elf_Shdr *section = &e->section_headers[sym->st_shndx];
-    printf("section->sh_addr: %lx, sym->st_value: %lx\n", 
-            section->sh_addr, sym->st_value);
     return (char *)section->sh_addr + sym->st_value;
 }
 
