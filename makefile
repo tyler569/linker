@@ -4,9 +4,12 @@ CFLAGS += $(INCLUDE) -g
 
 .PHONY: all
 
-all: link-ng liblib.so lmain
+all: link-ng link-rel lib.o liblib.so lmain
 
-link-ng: link-ng.c pltstub.S
+link-ng: link-ng.c elf-ng.c pltstub.S
+	$(CC) $(CFLAGS) $^ -o $@
+
+link-rel: link-ngrel.c elf-ng.c
 	$(CC) $(CFLAGS) $^ -o $@
 
 lib.o: lib.c lib.h
@@ -25,4 +28,4 @@ lmain: lmain.o rt.o liblib.so
 	ld -o $@ -pie -dynamic-linker /home/tyler/dyld -L. rt.o $< -llib
 
 clean:
-	rm -f link-ng lmain *.so *.o
+	rm -f link-ng link-rel lmain *.so *.o
